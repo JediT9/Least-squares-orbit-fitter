@@ -4,7 +4,7 @@ import matplotlib
 import numpy as np
 matplotlib.use("tkagg")
 
-etc = ETC("B", "FLI", "B&C", moon_phase='bright')
+etc = ETC("B", "FLI", "McLellan", moon_phase='bright')
 etc.time_for_snr(30, mag=16.3, plot=True)
 plt.show()
 

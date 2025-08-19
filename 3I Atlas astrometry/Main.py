@@ -9,11 +9,12 @@ import pstats
 import io
 import copy
 from datetime import datetime
+from multiprocessing import Process, Lock
 
 profiler = cProfile.Profile()
 profiler.enable()
 matplotlib.use('TkAgg')
-
+lock = Lock()
 
 # Define constants
 AU: float = 1.4959787 * 10 ** 11  # https://adsabs.harvard.edu/full/1995A%26A...298..629H
@@ -184,11 +185,11 @@ def calc_pos(a, e, i, omega, w, v):
     pqw_y = p * np.sin(v) / (1 + e * np.cos(v))
     pqw_z = 0
     pos_pqw = np.array([pqw_x, pqw_y, pqw_z])
-    conversion_matrix = np.array([[np.cos(omega)*np.cos(w) - np.sin(omega)*np.sin(w)*np.cos(i),
-                                   -np.cos(omega)*np.sin(w) - np.sin(omega)*np.cos(w)*np.cos(i),
+    conversion_matrix = np.array([[np.cos(omega) * np.cos(w) - np.sin(omega) * np.sin(w) * np.cos(i),
+                                   -np.cos(omega) * np.sin(w) - np.sin(omega) * np.cos(w) * np.cos(i),
                                    np.sin(omega) * np.sin(i)],
-                                  [np.sin(omega)*np.cos(w) + np.cos(omega)*np.sin(w)*np.cos(i),
-                                   -np.sin(omega)*np.sin(w) + np.cos(omega)*np.cos(w)*np.cos(i),
+                                  [np.sin(omega) * np.cos(w) + np.cos(omega) * np.sin(w) * np.cos(i),
+                                   -np.sin(omega) * np.sin(w) + np.cos(omega) * np.cos(w) * np.cos(i),
                                    -np.cos(omega) * np.sin(i)],
                                   [np.sin(w) * np.sin(i), np.cos(w) * np.sin(i), np.cos(i)]])
     ijk_position = np.linalg.matmul(conversion_matrix, pos_pqw)
@@ -198,10 +199,10 @@ def calc_pos(a, e, i, omega, w, v):
 def time_from_true_anomaly(v, e, a, m):
     """Calculate the expected time from the true anomaly"""
     if e < 1:
-        phi = 2 / ((1 - e ** 2) ** (3/2)) * np.atan2(((1 - e) / (1 + e)) ** (1/2) * np.tan(v/2), 1) - \
+        phi = 2 / ((1 - e ** 2) ** (3 / 2)) * np.atan2(((1 - e) / (1 + e)) ** (1 / 2) * np.tan(v / 2), 1) - \
               (e * np.sin(v)) / ((1 - e ** 2) * (1 + e * np.cos(v)))
     else:
-        phi = -2 / ((e ** 2 - 1) ** (3/2)) * np.arctanh((e - 1) / (e ** 2 - 1) ** (1/2) * np.tan(v/2)) + \
+        phi = -2 / ((e ** 2 - 1) ** (3 / 2)) * np.arctanh((e - 1) / (e ** 2 - 1) ** (1 / 2) * np.tan(v / 2)) + \
               (e * np.sin(v)) / ((e ** 2 - 1) * (1 + e * np.cos(v)))
     mu = m * G
     h = np.sqrt(mu * a * (1 - e ** 2))
@@ -256,7 +257,8 @@ def adjust_light_time(params, obs_time, earth_pos, units=False):
     for iteration in range(3):
         try:
             roots = scipy.optimize.root_scalar(lambda x: root_of_anomaly(x, e, a, M_SUN, curr_time),
-                                               bracket=(-np.pi + np.acos(1 / e) + 0.001, np.pi - np.acos(1 / e) - 0.001))
+                                               bracket=(
+                                               -np.pi + np.acos(1 / e) + 0.001, np.pi - np.acos(1 / e) - 0.001))
         except ValueError:
             print(params)
         true_anomaly = roots.root
@@ -279,9 +281,10 @@ def calc_error_in_orbit(params, observations: SkyPositionData, all_earth, is_min
         true_anomalies = np.append(true_anomalies, true_anomaly)
         expected_position = calc_pos(a, e, i, omega, w, true_anomaly)
         earth_position = np.array([all_earth.iloc[index, 1], all_earth.iloc[index, 2], all_earth.iloc[index, 3]])
-        direction = np.array([np.cos(observations.ecliptic_long()[index]) * np.cos(observations.ecliptic_latitude()[index]),
-                              np.cos(observations.ecliptic_latitude()[index]) * np.sin(observations.ecliptic_long()[index]),
-                              np.sin(observations.ecliptic_latitude()[index])])
+        direction = np.array(
+            [np.cos(observations.ecliptic_long()[index]) * np.cos(observations.ecliptic_latitude()[index]),
+             np.cos(observations.ecliptic_latitude()[index]) * np.sin(observations.ecliptic_long()[index]),
+             np.sin(observations.ecliptic_latitude()[index])])
         distance_sq, projection = distance_to_prediction(expected_position, earth_position, direction)
         projections = np.vstack((projections, projection))
         errors = np.append(errors, distance_sq)
@@ -324,7 +327,7 @@ def fit_orbit_parameters(observations: SkyPositionData, initial_guess: tuple[flo
 def testing_on_earth():
     """Testing the orbit model"""
     jpl_positions = np.loadtxt("Earth over year.txt", delimiter=",")
-    earth_orbit = (1.0000011, 0.01671022, deg_to_rad(0), deg_to_rad(360-11.26064), deg_to_rad(102.94719+11.26064))
+    earth_orbit = (1.0000011, 0.01671022, deg_to_rad(0), deg_to_rad(360 - 11.26064), deg_to_rad(102.94719 + 11.26064))
     positions_to_calc = np.linspace(0, 360, 360)
     expected_xs = []
     expected_ys = []
@@ -340,26 +343,28 @@ def testing_on_earth():
     plt.show()
 
 
-def brute_error_varying_data(initial_params, observations, all_earth, iterations):
+def brute_error_varying_data(initial_params, observations, all_earth, iterations, lock_to_use):
     """Compute the given number of iterations with random data each time"""
 
     # Open file to record results as found
-    with open("error orbit fits.txt", "a") as content:
-        for iteration in range(iterations):
-            false_data = create_data(observations)
-            fitted_scaled = fit_orbit_parameters(false_data, initial_params, all_earth)
-            true_fitted = convert_to_true_units(fitted_scaled)
-            error = calc_error_in_orbit(fitted_scaled, false_data, all_earth)
-            content.write(",".join([str(element) for element in true_fitted] + [str(error)]))
-            content.write("\n")
-            print(iteration, datetime.now())
-            # print(false_data.ra_meas_sec[0])
-            print(fitted_scaled - initial_params)
-            print(f"A: {true_fitted[0]}, e: {true_fitted[1]}, (i, Omega, w): {true_fitted[2], true_fitted[3], true_fitted[4]}, Tp: {true_fitted[5]}")
-            print(f"Error: {error} arc-seconds")
+    for iteration in range(iterations):
+        false_data = create_data(observations)
+        fitted_scaled = fit_orbit_parameters(false_data, initial_params, all_earth)
+        true_fitted = convert_to_true_units(fitted_scaled)
+        error = calc_error_in_orbit(fitted_scaled, false_data, all_earth)
+        with lock_to_use:
+            with open("error orbit fits.txt", "a") as content:
+                content.write(",".join([str(element) for element in true_fitted] + [str(error)]))
+                content.write("\n")
+        print(iteration, datetime.now())
+        # print(false_data.ra_meas_sec[0])
+        print(fitted_scaled - initial_params)
+        print(
+            f"A: {true_fitted[0]}, e: {true_fitted[1]}, (i, Omega, w): {true_fitted[2], true_fitted[3], true_fitted[4]}, Tp: {true_fitted[5]}")
+        print(f"Error: {error} arc-seconds")
 
 
-def brute_force_varying_parameters(true_params, observations: SkyPositionData, all_earth, iterations):
+def brute_force_varying_parameters(true_params, observations: SkyPositionData, all_earth, iterations, file_lock: Lock):
     """Compute the given number of iterations, randomly varying one of the parameters"""
 
     # Possible values
@@ -369,36 +374,49 @@ def brute_force_varying_parameters(true_params, observations: SkyPositionData, a
     possible_t = np.linspace(-4, 4, 1000)
 
     # Open file to record fits as it goes
-    with open("error params.txt", "a") as content:
-        for iteration in range(iterations):
-            # param_to_vary = np.random.randint(0, 6)
-            # new_params = np.array(copy.deepcopy(true_params))
-            # scale_factor = np.random.normal()
-            # possible_param_change = scale_factor * np.array([0.2, 3, 3, 3, 3, 3/7])
-            # new_params[param_to_vary] = new_params[param_to_vary] + possible_param_change[param_to_vary]
+    for iteration in range(iterations):
+        # param_to_vary = np.random.randint(0, 6)
+        # new_params = np.array(copy.deepcopy(true_params))
+        # scale_factor = np.random.normal()
+        # possible_param_change = scale_factor * np.array([0.2, 3, 3, 3, 3, 3/7])
+        # new_params[param_to_vary] = new_params[param_to_vary] + possible_param_change[param_to_vary]
 
-            new_params = np.array([possible_a[np.random.randint(0, 1000)], possible_e[np.random.randint(0, 1000)],
-                                   possible_angle[np.random.randint(0, 1000)],
-                                   possible_angle[np.random.randint(0, 1000)],
-                                   possible_angle[np.random.randint(0, 1000)], possible_t[np.random.randint(0, 1000)]])
+        new_params = np.array([possible_a[np.random.randint(0, 1000)], possible_e[np.random.randint(0, 1000)],
+                               possible_angle[np.random.randint(0, 1000)],
+                               possible_angle[np.random.randint(0, 1000)],
+                               possible_angle[np.random.randint(0, 1000)], possible_t[np.random.randint(0, 1000)]])
 
-            # Check bounds
-            bounds = [(-10, -0.1), (1.01, 15), (0, 2 * np.pi), (0, 2 * np.pi), (0, 2 * np.pi), (-4, 4)]
-            for index in range(new_params.size):
-                if new_params[index] < bounds[index][0]:
-                    new_params[index] = bounds[index][0]
-                elif new_params[index] > bounds[index][1]:
-                    new_params[index] = bounds[index][1]
+        # Check bounds
+        bounds = [(-10, -0.1), (1.01, 15), (0, 2 * np.pi), (0, 2 * np.pi), (0, 2 * np.pi), (-4, 4)]
+        for index in range(new_params.size):
+            if new_params[index] < bounds[index][0]:
+                new_params[index] = bounds[index][0]
+            elif new_params[index] > bounds[index][1]:
+                new_params[index] = bounds[index][1]
 
-            fitted_scaled = fit_orbit_parameters(observations, new_params, all_earth)
-            true_fitted = convert_to_true_units(fitted_scaled)
-            error = calc_error_in_orbit(fitted_scaled, observations, all_earth)
-            content.write(",".join([str(element) for element in new_params] + [str(element) for element in true_fitted]
-                                   + [str(error)]))
-            content.write("\n")
-            print(iteration, datetime.now())
-            print(new_params)
-            print(error)
+        fitted_scaled = fit_orbit_parameters(observations, new_params, all_earth)
+        true_fitted = convert_to_true_units(fitted_scaled)
+        error = calc_error_in_orbit(fitted_scaled, observations, all_earth)
+        with lock:
+            with open("error params.txt", "a") as content:
+                content.write(",".join([str(element) for element in new_params] +
+                                       [str(element) for element in true_fitted] + [str(error)]))
+                content.write("\n")
+        print(iteration, datetime.now())
+        print(new_params)
+        print(error)
+
+
+def run_multi_thread(function, args, lock_to_use, threads=1):
+    """Run the supplied functions simultaneously across supplied number of threads"""
+
+    created_threads = [Process(target=function, args=(*args, lock_to_use)) for num in range(threads)]
+
+    for thread in created_threads:
+        thread.start()
+
+    for thread in created_threads:
+        thread.join()
 
 
 axs = plt.axes()
@@ -406,7 +424,7 @@ ephemeris = load_data("Ephemerides.txt")
 earth_positions = load_earth_pos("Earth.txt", ephemeris)
 
 print(convert_to_true_units((-2.638825934940408E-01, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
-                             deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279), -2/7)))
+                             deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279), -2 / 7)))
 
 # print(adjust_light_time((-2.638825934940408E-01, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
 #                          deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279), -2/7), 2460915.791666667,
@@ -418,103 +436,109 @@ print(convert_to_true_units((-2.638825934940408E-01, 6.141051778951341E+00, deg_
 
 # brute_force_varying_parameters((-2.638825934940408E-01, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
 #                                 deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279), -2/7), ephemeris,
-#                                earth_positions, 1000)
+#                                earth_positions, 1000, lock)
 
-# fitted_scaled = fit_orbit_parameters(ephemeris, (-2.638825934940408E-01, 6.141051778951341E+00,
-#                                                  deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
-#                                                  deg_to_rad(128.0088682076279), -2/7),
-#                                      earth_positions, "minimize")
-# fitted = convert_to_true_units(fitted_scaled)
+if __name__ == "__main__":
+    run_multi_thread(brute_force_varying_parameters, ((-2.638825934940408E-01, 6.141051778951341E+00,
+                                                       deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
+                                                       deg_to_rad(128.0088682076279), -2 / 7), ephemeris,
+                                                      earth_positions, 1000), lock, threads=4)
 
-xs = np.linspace(-np.pi + np.acos(1 / 6) + 0.001, np.pi - np.acos(1 / 6) - 0.001, 1000)
-ys = time_from_true_anomaly(xs, 6, -1.00000000e+02, M_SUN)
-# plt.plot(xs, ys)
-# plt.show()
+    # fitted_scaled = fit_orbit_parameters(ephemeris, (-2.638825934940408E-01, 6.141051778951341E+00,
+    #                                                  deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
+    #                                                  deg_to_rad(128.0088682076279), -2/7),
+    #                                      earth_positions, "minimize")
+    # fitted = convert_to_true_units(fitted_scaled)
 
-# fitted_positions = np.zeros((1, 3))
-# for true in np.linspace(-np.pi + np.acos(1 / fitted[1]) + 0.2, np.pi - np.acos(1 / fitted[1]) - 0.2, 1000):
-#     position = calc_pos(fitted[0], fitted[1], fitted[2], fitted[3], fitted[4], true)
-#     fitted_positions = np.vstack((fitted_positions, position))
-# axs.plot(fitted_positions[1:, 0], fitted_positions[1:, 1], "y-", label="Fitted orbit")
-# closest_approaches, error = calc_error_in_orbit(fitted_scaled, ephemeris, earth_positions,
-#                                                 False)
-# axs.plot(closest_approaches[1:, 0] + earth_positions.x * 1000,
-#          closest_approaches[1:, 1] + earth_positions.y * 1000, "y.")
-# print(error)
-# print(fitted_scaled)
-# print(fitted)
-# print((np.array(fitted) / np.array((-2.638825934940408E-01 * AU, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
-#                                    deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279),
-#                                     2460977.9789309348))) - 1)
+    xs = np.linspace(-np.pi + np.acos(1 / 6) + 0.001, np.pi - np.acos(1 / 6) - 0.001, 1000)
+    ys = time_from_true_anomaly(xs, 6, -1.00000000e+02, M_SUN)
+    # plt.plot(xs, ys)
+    # plt.show()
 
-fitted_orbits = np.loadtxt("error params.txt", delimiter=",")
-print(-np.log10(fitted_orbits[:, 12]))
-min_error = np.max(-np.log10(fitted_orbits[:, 12]))
-max_error = np.min(-np.log10(fitted_orbits[:, 12]))
-print(max_error, min_error)
-for orbit_index in range(fitted_orbits[:, 0].size):
-    positions = np.zeros((1, 3))
-    for true in np.linspace(-np.pi + np.acos(1 / fitted_orbits[orbit_index, 7]) + 0.001,
-                            np.pi - np.acos(1 / fitted_orbits[orbit_index, 7]) - 0.001, 1000):
-        position = calc_pos(fitted_orbits[orbit_index, 6], fitted_orbits[orbit_index, 7], fitted_orbits[orbit_index, 8],
-                            fitted_orbits[orbit_index, 9], fitted_orbits[orbit_index, 10], true)
-        positions = np.vstack((positions, position))
-    axs.plot(positions[1:, 0], positions[1:, 1], color=((-np.log10(fitted_orbits[orbit_index, 12]) - max_error) /
-                                                        (min_error - max_error), 0, 0),
-             alpha=1)
+    # fitted_positions = np.zeros((1, 3))
+    # for true in np.linspace(-np.pi + np.acos(1 / fitted[1]) + 0.2, np.pi - np.acos(1 / fitted[1]) - 0.2, 1000):
+    #     position = calc_pos(fitted[0], fitted[1], fitted[2], fitted[3], fitted[4], true)
+    #     fitted_positions = np.vstack((fitted_positions, position))
+    # axs.plot(fitted_positions[1:, 0], fitted_positions[1:, 1], "y-", label="Fitted orbit")
+    # closest_approaches, error = calc_error_in_orbit(fitted_scaled, ephemeris, earth_positions,
+    #                                                 False)
+    # axs.plot(closest_approaches[1:, 0] + earth_positions.x * 1000,
+    #          closest_approaches[1:, 1] + earth_positions.y * 1000, "y.")
+    # print(error)
+    # print(fitted_scaled)
+    # print(fitted)
+    # print((np.array(fitted) / np.array((-2.638825934940408E-01 * AU, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
+    #                                    deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279),
+    #                                     2460977.9789309348))) - 1)
 
-propagate_direction = np.linspace(0, 5 * 10 ** 11, 1000)
-for index in range(len(ephemeris.light)):
-    if index == 0:
-        axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
-                 np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
-                 earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
-                 np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-", label="Observation line")
-    else:
-        axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
-                 np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
-                 earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
-                 np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-")
+    fitted_orbits = np.loadtxt("error params.txt", delimiter=",")
+    print(-np.log10(fitted_orbits[:, 12]))
+    min_error = np.max(-np.log10(fitted_orbits[:, 12]))
+    max_error = np.min(-np.log10(fitted_orbits[:, 12]))
+    print(max_error, min_error)
+    for orbit_index in range(fitted_orbits[:, 0].size):
+        positions = np.zeros((1, 3))
+        for true in np.linspace(-np.pi + np.acos(1 / fitted_orbits[orbit_index, 7]) + 0.001,
+                                np.pi - np.acos(1 / fitted_orbits[orbit_index, 7]) - 0.001, 1000):
+            position = calc_pos(fitted_orbits[orbit_index, 6], fitted_orbits[orbit_index, 7], fitted_orbits[orbit_index, 8],
+                                fitted_orbits[orbit_index, 9], fitted_orbits[orbit_index, 10], true)
+            positions = np.vstack((positions, position))
+        axs.plot(positions[1:, 0], positions[1:, 1], color=((-np.log10(fitted_orbits[orbit_index, 12]) - max_error) /
+                                                            (min_error - max_error), 0, 0),
+                 alpha=1)
 
-axs.plot(AU * np.cos(np.linspace(0, 2 * np.pi, 1000)), AU * np.sin(np.linspace(0, 2 * np.pi, 1000)))
-axs.plot(earth_positions.x * 1000 + np.cos(ephemeris.ecliptic_long()) * np.cos(ephemeris.ecliptic_latitude()) *
-         ephemeris.distance * AU, earth_positions.y * 1000 + np.sin(ephemeris.ecliptic_long()) *
-         np.cos(ephemeris.ecliptic_latitude()) * ephemeris.distance * AU, "m.")
+    propagate_direction = np.linspace(0, 5 * 10 ** 11, 1000)
+    for index in range(len(ephemeris.light)):
+        if index == 0:
+            axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
+                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
+                     earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
+                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-", label="Observation line")
+        else:
+            axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
+                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
+                     earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
+                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-")
 
-# Plot the expected positions on December 20
-# data = np.loadtxt("error orbit fits.txt", delimiter=",")
-# standard_deviations = np.array([np.std(data[:, 0]), np.std(data[:, 1]), np.std(data[:, 2]),
-#                                 np.std(data[:, 3]), np.std(data[:, 4]), np.std(data[:, 5])])
-# param_means = np.array([np.median(data[:, 0]), np.median(data[:, 1]), np.median(data[:, 2]),
-#                         np.median(data[:, 3]), np.median(data[:, 4]), np.median(data[:, 5])])
-# dec_20 = 2461029.5
-# for orbit_num in range(4000):
-#     param_modifier = np.random.normal(size=6)
-#     params_to_plot = param_means + standard_deviations * param_modifier
-#     true_anomaly_dec_20 = adjust_light_time(params_to_plot, dec_20,
-#                                             np.array([5.179287755554469E+06,  1.471008280186807E+08,
-#                                                       -8.397315859936178E+03]) * 1000, True)
-#     position = calc_pos(params_to_plot[0], params_to_plot[1], params_to_plot[2], params_to_plot[3], params_to_plot[4],
-#                         true_anomaly_dec_20)
-#     ra_obs, dec_obs = xyz_to_ra_dec(position, np.array([5.179287755554469E+06,  1.471008280186807E+08,
-#                                                         -8.397315859936178E+03]) * 1000)
-#     ra_min = ra_obs * 12 * 60 / np.pi
-#     dec_min = dec_obs * 180 * 60 / np.pi
-#     axs.plot(ra_min, dec_min, "r.", alpha=0.05)
-#     print(orbit_num)
-#
-# axs.set_xlabel("Right ascension [']")
-# axs.set_ylabel("Declination [']")
+    axs.plot(AU * np.cos(np.linspace(0, 2 * np.pi, 1000)), AU * np.sin(np.linspace(0, 2 * np.pi, 1000)))
+    axs.plot(earth_positions.x * 1000 + np.cos(ephemeris.ecliptic_long()) * np.cos(ephemeris.ecliptic_latitude()) *
+             ephemeris.distance * AU, earth_positions.y * 1000 + np.sin(ephemeris.ecliptic_long()) *
+             np.cos(ephemeris.ecliptic_latitude()) * ephemeris.distance * AU, "m.")
 
-actual_positions = np.loadtxt("actual 3I pos.txt", delimiter=",")
-axs.plot(actual_positions[:, 0] * AU, actual_positions[:, 1] * AU, "r-")
-axs.plot([0], [0], "r.")
-axis_lim = 7 * 10 ** 8
-profiler.disable()
+    # Plot the expected positions on December 20
+    # data = np.loadtxt("error orbit fits.txt", delimiter=",")
+    # standard_deviations = np.array([np.std(data[:, 0]), np.std(data[:, 1]), np.std(data[:, 2]),
+    #                                 np.std(data[:, 3]), np.std(data[:, 4]), np.std(data[:, 5])])
+    # param_means = np.array([np.median(data[:, 0]), np.median(data[:, 1]), np.median(data[:, 2]),
+    #                         np.median(data[:, 3]), np.median(data[:, 4]), np.median(data[:, 5])])
+    # dec_20 = 2461029.5
+    # for orbit_num in range(4000):
+    #     param_modifier = np.random.normal(size=6)
+    #     params_to_plot = param_means + standard_deviations * param_modifier
+    #     true_anomaly_dec_20 = adjust_light_time(params_to_plot, dec_20,
+    #                                             np.array([5.179287755554469E+06,  1.471008280186807E+08,
+    #                                                       -8.397315859936178E+03]) * 1000, True)
+    #     position = calc_pos(params_to_plot[0], params_to_plot[1], params_to_plot[2], params_to_plot[3], params_to_plot[4],
+    #                         true_anomaly_dec_20)
+    #     ra_obs, dec_obs = xyz_to_ra_dec(position, np.array([5.179287755554469E+06,  1.471008280186807E+08,
+    #                                                         -8.397315859936178E+03]) * 1000)
+    #     ra_min = ra_obs * 12 * 60 / np.pi
+    #     dec_min = dec_obs * 180 * 60 / np.pi
+    #     axs.plot(ra_min, dec_min, "r.", alpha=0.05)
+    #     print(orbit_num)
+    #
+    # axs.set_xlabel("Right ascension [']")
+    # axs.set_ylabel("Declination [']")
 
-# Format and display the results
-s = io.StringIO()
-stats = pstats.Stats(profiler, stream=s).sort_stats('ncalls')
-stats.print_stats(200)  # Print top 20 functions
-# print(s.getvalue())
-plt.show()
+    actual_positions = np.loadtxt("actual 3I pos.txt", delimiter=",")
+    axs.plot(actual_positions[:, 0] * AU, actual_positions[:, 1] * AU, "r-")
+    axs.plot([0], [0], "r.")
+    axis_lim = 7 * 10 ** 8
+    profiler.disable()
+
+    # Format and display the results
+    s = io.StringIO()
+    stats = pstats.Stats(profiler, stream=s).sort_stats('ncalls')
+    stats.print_stats(200)  # Print top 20 functions
+    # print(s.getvalue())
+    plt.show()
