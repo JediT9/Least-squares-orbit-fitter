@@ -439,10 +439,10 @@ print(convert_to_true_units((-2.638825934940408E-01, 6.141051778951341E+00, deg_
 #                                earth_positions, 1000, lock)
 
 if __name__ == "__main__":
-    run_multi_thread(brute_force_varying_parameters, ((-2.638825934940408E-01, 6.141051778951341E+00,
-                                                       deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
-                                                       deg_to_rad(128.0088682076279), -2 / 7), ephemeris,
-                                                      earth_positions, 1000), lock, threads=4)
+    # run_multi_thread(brute_force_varying_parameters, ((-2.638825934940408E-01, 6.141051778951341E+00,
+    #                                                    deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
+    #                                                    deg_to_rad(128.0088682076279), -2 / 7), ephemeris,
+    #                                                   earth_positions, 1000), lock, threads=6)
 
     # fitted_scaled = fit_orbit_parameters(ephemeris, (-2.638825934940408E-01, 6.141051778951341E+00,
     #                                                  deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
@@ -472,6 +472,7 @@ if __name__ == "__main__":
     #                                     2460977.9789309348))) - 1)
 
     fitted_orbits = np.loadtxt("error params.txt", delimiter=",")
+    # fitted_orbits = fitted_orbits[fitted_orbits[:, 12] < 80, :]
     print(-np.log10(fitted_orbits[:, 12]))
     min_error = np.max(-np.log10(fitted_orbits[:, 12]))
     max_error = np.min(-np.log10(fitted_orbits[:, 12]))
@@ -485,25 +486,27 @@ if __name__ == "__main__":
             positions = np.vstack((positions, position))
         axs.plot(positions[1:, 0], positions[1:, 1], color=((-np.log10(fitted_orbits[orbit_index, 12]) - max_error) /
                                                             (min_error - max_error), 0, 0),
-                 alpha=1)
+                 alpha=(-np.log10(fitted_orbits[orbit_index, 12]) - max_error) / (min_error - max_error),
+                 label=fitted_orbits[orbit_index, 12])
+    axs.legend()
 
-    propagate_direction = np.linspace(0, 5 * 10 ** 11, 1000)
-    for index in range(len(ephemeris.light)):
-        if index == 0:
-            axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
-                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
-                     earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
-                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-", label="Observation line")
-        else:
-            axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
-                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
-                     earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
-                     np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-")
-
-    axs.plot(AU * np.cos(np.linspace(0, 2 * np.pi, 1000)), AU * np.sin(np.linspace(0, 2 * np.pi, 1000)))
-    axs.plot(earth_positions.x * 1000 + np.cos(ephemeris.ecliptic_long()) * np.cos(ephemeris.ecliptic_latitude()) *
-             ephemeris.distance * AU, earth_positions.y * 1000 + np.sin(ephemeris.ecliptic_long()) *
-             np.cos(ephemeris.ecliptic_latitude()) * ephemeris.distance * AU, "m.")
+    # propagate_direction = np.linspace(0, 5 * 10 ** 11, 1000)
+    # for index in range(len(ephemeris.light)):
+    #     if index == 0:
+    #         axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
+    #                  np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
+    #                  earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
+    #                  np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-", label="Observation line")
+    #     else:
+    #         axs.plot(earth_positions.x[index] * 1000 + np.cos(ephemeris.ecliptic_long()[index]) *
+    #                  np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction,
+    #                  earth_positions.y[index] * 1000 + np.sin(ephemeris.ecliptic_long()[index]) *
+    #                  np.cos(ephemeris.ecliptic_latitude()[index]) * propagate_direction, "g-")
+    #
+    # axs.plot(AU * np.cos(np.linspace(0, 2 * np.pi, 1000)), AU * np.sin(np.linspace(0, 2 * np.pi, 1000)))
+    # axs.plot(earth_positions.x * 1000 + np.cos(ephemeris.ecliptic_long()) * np.cos(ephemeris.ecliptic_latitude()) *
+    #          ephemeris.distance * AU, earth_positions.y * 1000 + np.sin(ephemeris.ecliptic_long()) *
+    #          np.cos(ephemeris.ecliptic_latitude()) * ephemeris.distance * AU, "m.")
 
     # Plot the expected positions on December 20
     # data = np.loadtxt("error orbit fits.txt", delimiter=",")
