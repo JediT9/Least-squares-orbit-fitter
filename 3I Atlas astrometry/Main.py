@@ -441,56 +441,56 @@ print(convert_to_true_units((1.356393053772311, 6.141051778951341E+00, deg_to_ra
 #                                earth_positions, 1000, lock)
 
 if __name__ == "__main__":
-    run_multi_thread(brute_error_varying_data, ((1.356393053772311, 6.141051778951341E+00,
-                                                 deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
-                                                 deg_to_rad(128.0088682076279), -2 / 7), ephemeris,
-                                                earth_positions, 1000), lock, threads=4)
+    # run_multi_thread(brute_error_varying_data, ((1.356393053772311, 6.141051778951341E+00,
+    #                                              deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
+    #                                              deg_to_rad(128.0088682076279), -2 / 7), ephemeris,
+    #                                             earth_positions, 1000), lock, threads=4)
 
-    # fitted_scaled = fit_orbit_parameters(ephemeris, (1.356393053772311, 6.141051778951341E+00,
-    #                                                  deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
-    #                                                  deg_to_rad(128.0088682076279), -2/7),
-    #                                      earth_positions, "minimize")
-    # fitted = convert_to_true_units(fitted_scaled)
+    fitted_scaled = fit_orbit_parameters(ephemeris, (1.356393053772311, 0.5,
+                                                     deg_to_rad(175.1132392476728), deg_to_rad(322.1595230967855),
+                                                     deg_to_rad(128.0088682076279), -2/7),
+                                         earth_positions, "minimize")
+    fitted = convert_to_true_units(fitted_scaled)
 
     xs = np.linspace(-np.pi + np.acos(1 / 6) + 0.001, np.pi - np.acos(1 / 6) - 0.001, 1000)
     ys = time_from_true_anomaly(xs, 6, -1.00000000e+02, M_SUN)
     # plt.plot(xs, ys)
     # plt.show()
 
-    # fitted_positions = np.zeros((1, 3))
-    # for true in np.linspace(-np.pi + np.acos(1 / fitted[1]) + 0.2, np.pi - np.acos(1 / fitted[1]) - 0.2, 1000):
-    #     position = calc_pos(fitted[0], fitted[1], fitted[2], fitted[3], fitted[4], true)
-    #     fitted_positions = np.vstack((fitted_positions, position))
-    # axs.plot(fitted_positions[1:, 0], fitted_positions[1:, 1], "y-", label="Fitted orbit")
-    # closest_approaches, error = calc_error_in_orbit(fitted_scaled, ephemeris, earth_positions,
-    #                                                 False)
-    # axs.plot(closest_approaches[1:, 0] + earth_positions.x * 1000,
-    #          closest_approaches[1:, 1] + earth_positions.y * 1000, "y.")
-    # print(error)
-    # print(fitted_scaled)
-    # print(fitted)
-    # print((np.array(fitted) / np.array((1.356393053772311 * AU, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
-    #                                    deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279),
-    #                                     2460977.9789309348))) - 1)
+    fitted_positions = np.zeros((1, 3))
+    for true in np.linspace(-np.pi + np.acos(1 / fitted[1]) + 0.2, np.pi - np.acos(1 / fitted[1]) - 0.2, 1000):
+        position = calc_pos(fitted[0], fitted[1], fitted[2], fitted[3], fitted[4], true)
+        fitted_positions = np.vstack((fitted_positions, position))
+    axs.plot(fitted_positions[1:, 0], fitted_positions[1:, 1], "y-", label="Fitted orbit")
+    closest_approaches, error = calc_error_in_orbit(fitted_scaled, ephemeris, earth_positions,
+                                                    False)
+    axs.plot(closest_approaches[1:, 0] + earth_positions.x * 1000,
+             closest_approaches[1:, 1] + earth_positions.y * 1000, "y.")
+    print(error)
+    print(fitted_scaled)
+    print(fitted)
+    print((np.array(fitted) / np.array((1.356393053772311 * AU, 6.141051778951341E+00, deg_to_rad(175.1132392476728),
+                                       deg_to_rad(322.1595230967855), deg_to_rad(128.0088682076279),
+                                        2460977.9789309348))) - 1)
 
-    fitted_orbits = np.loadtxt("error params.txt", delimiter=",")
-    # fitted_orbits = fitted_orbits[fitted_orbits[:, 12] < 80, :]
-    print(-np.log10(fitted_orbits[:, 12]))
-    min_error = np.max(-np.log10(fitted_orbits[:, 12]))
-    max_error = np.min(-np.log10(fitted_orbits[:, 12]))
-    print(max_error, min_error)
-    for orbit_index in range(fitted_orbits[:, 0].size):
-        positions = np.zeros((1, 3))
-        for true in np.linspace(-np.pi + np.acos(1 / fitted_orbits[orbit_index, 7]) + 0.001,
-                                np.pi - np.acos(1 / fitted_orbits[orbit_index, 7]) - 0.001, 1000):
-            position = calc_pos(fitted_orbits[orbit_index, 6], fitted_orbits[orbit_index, 7],
-                                fitted_orbits[orbit_index, 8],
-                                fitted_orbits[orbit_index, 9], fitted_orbits[orbit_index, 10], true)
-            positions = np.vstack((positions, position))
-        axs.plot(positions[1:, 0], positions[1:, 1], color=((-np.log10(fitted_orbits[orbit_index, 12]) - max_error) /
-                                                            (min_error - max_error), 0, 0),
-                 alpha=(-np.log10(fitted_orbits[orbit_index, 12]) - max_error) / (min_error - max_error),
-                 label=fitted_orbits[orbit_index, 12])
+    # fitted_orbits = np.loadtxt("error params.txt", delimiter=",")
+    # # fitted_orbits = fitted_orbits[fitted_orbits[:, 12] < 80, :]
+    # print(-np.log10(fitted_orbits[:, 12]))
+    # min_error = np.max(-np.log10(fitted_orbits[:, 12]))
+    # max_error = np.min(-np.log10(fitted_orbits[:, 12]))
+    # print(max_error, min_error)
+    # for orbit_index in range(fitted_orbits[:, 0].size):
+    #     positions = np.zeros((1, 3))
+    #     for true in np.linspace(-np.pi + np.acos(1 / fitted_orbits[orbit_index, 7]) + 0.001,
+    #                             np.pi - np.acos(1 / fitted_orbits[orbit_index, 7]) - 0.001, 1000):
+    #         position = calc_pos(fitted_orbits[orbit_index, 6], fitted_orbits[orbit_index, 7],
+    #                             fitted_orbits[orbit_index, 8],
+    #                             fitted_orbits[orbit_index, 9], fitted_orbits[orbit_index, 10], true)
+    #         positions = np.vstack((positions, position))
+    #     axs.plot(positions[1:, 0], positions[1:, 1], color=((-np.log10(fitted_orbits[orbit_index, 12]) - max_error) /
+    #                                                         (min_error - max_error), 0, 0),
+    #              alpha=(-np.log10(fitted_orbits[orbit_index, 12]) - max_error) / (min_error - max_error),
+    #              label=fitted_orbits[orbit_index, 12])
     # axs.legend()
 
     # propagate_direction = np.linspace(0, 5 * 10 ** 11, 1000)
